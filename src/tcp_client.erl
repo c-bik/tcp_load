@@ -32,7 +32,7 @@ init([Ip, Port]) ->
     case gen_tcp:connect(Ip, Port, [{packet, 0}, binary, {active, once}]) of
         {ok, Sock} ->
             io:format("connect ~p ~p ~p~n", [Ip, Port, Sock]),
-            erlang:send_after(5000, self(), {msg, list_to_binary(lists:seq(0,255))}),
+            erlang:send_after(5000, self(), msg),
             {ok, {Ip, Port, Sock}};
         {error, Reason} -> {stop, Reason}
     end;
@@ -47,10 +47,11 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info({msg, Data}, {Ip, Port, Sock}) ->
+handle_info(msg, {Ip, Port, Sock}) ->
+    Data = term_to_binary(os:timestamp()),
     case gen_tcp:send(Sock, Data) of
         ok ->
-            erlang:send_after(5000, self(), {msg, Data}),
+            erlang:send_after(5000, self(), msg),
             {noreply, {Ip, Port, Sock}};
         {error, Reason} ->
             {stop, Reason, {Ip, Port, Sock}}
@@ -62,11 +63,23 @@ handle_info({tcp_closed, Sock}, State) ->
     catch gen_tcp:close(Sock),
     {stop, normal, State};
 handle_info({tcp, Sock, Data}, {Ip, Port, Sock}) ->
-    io:format("~p Client RX : ~p~n", [self(), byte_size(Data)]),
+    try
+        RTT = timer:now_diff(os:timestamp(), binary_to_term(Data)),
+        if RTT > 0 -> io:format("~p Client RX : RTT ~p us~n", [self(), RTT]); true -> ok end
+    catch
+        _:_ ->
+            io:format("~p Client RX : ~p~n", [self(), byte_size(Data)])
+    end,
     self() ! arm,
     {noreply, {Ip, Port, Sock}};
 handle_info({tcp, Sock, Data}, Sock) ->
-    io:format("~p Accept RX : ~p~n", [self(), byte_size(Data)]),
+    try
+        RXT = timer:now_diff(os:timestamp(), binary_to_term(Data)),
+        if RXT > 0 -> io:format("~p Accept RX : ~p us~n", [self(), RXT]); true -> ok end
+    catch
+        _:_ ->
+            io:format("~p Accept RX : ~p~n", [self(), byte_size(Data)])
+    end,
     case gen_tcp:send(Sock, Data) of
         ok ->
             self() ! arm,
