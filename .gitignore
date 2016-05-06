@@ -9,3 +9,5 @@ rel/example_project
 .concrete/DEV_MODE
 .rebar
 *.swp
+c_src/tcp_server
+c_src/tcp_client
