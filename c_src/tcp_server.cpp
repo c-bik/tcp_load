@@ -20,6 +20,7 @@ int main(int argc, char *argv[])
 {
     int listenfd = 0, connfd = 0;
     struct sockaddr_in serv_addr;
+    pid_t childPid; 
 
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
     memset(&serv_addr, '0', sizeof(serv_addr));
@@ -46,32 +47,39 @@ int main(int argc, char *argv[])
     while(true) {
         connfd = accept(listenfd, (struct sockaddr*)NULL, NULL);
 
-        while(true) {
-            if(recv(connfd, &rtt, sizeof(rtt), MSG_WAITALL) < sizeof(rtt)) {
-                printf("receive failed!\n");
-                break;
-            }
-            printf("Dump RTT ");
-            dump(&rtt, sizeof(rtt));
+        childPid = fork();
+        if (childPid < 0) {
+            printf("[%d] failed to fork\n", getpid());
+            break;
+        } else if (childPid == 0) {
+            while(true) {
+                if(recv(connfd, &rtt, sizeof(rtt), MSG_WAITALL) < sizeof(rtt)) {
+                    printf("[%d,%d] receive failed!\n", getppid(), getpid());
+                    break;
+                }
+                printf("[%d,%d] Dump RTT ", getppid(), getpid());
+                dump(&rtt, sizeof(rtt));
 
-            memset(&time, 0, sizeof(time));
-            if(clock_gettime(CLOCK_REALTIME_COARSE, &time) < 0) {
-                printf("[%d] error getting time\n", __LINE__);
-                break;
-            }
-            printf("RTT %.5f s\n",
-                ((double)time.tv_sec + 1.0e-9*time.tv_nsec) - 
-                ((double)rtt.tv_sec + 1.0e-9*rtt.tv_nsec));
+                memset(&time, 0, sizeof(time));
+                if(clock_gettime(CLOCK_REALTIME_COARSE, &time) < 0) {
+                    printf("[%d,%d] error getting time\n", getppid(), getpid());
+                    break;
+                }
+                printf("[%d,%d] RTT %.5f s\n",
+                    ((double)time.tv_sec + 1.0e-9*time.tv_nsec) - 
+                    ((double)rtt.tv_sec + 1.0e-9*rtt.tv_nsec), getppid(), getpid());
 
-            printf("Dump TIME ");
-            dump(&time, sizeof(time));
-            if(send(connfd, &rtt, sizeof(rtt), 0) < 0) {
-                printf("[%d] socket send failed!\n", __LINE__);
-                break;
+                printf("Dump TIME ");
+                dump(&time, sizeof(time));
+                if(send(connfd, &rtt, sizeof(rtt), 0) < 0) {
+                    printf("[%d,%d] socket send failed!\n", getppid(), getpid());
+                    break;
+                }
             }
+
+            close(connfd);
+        } else {
+            sleep(1);
         }
-
-        close(connfd);
-        sleep(1);
     }
 }
