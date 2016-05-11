@@ -21,14 +21,14 @@ void send_clock(int sockfd)
 {
     struct timespec time;
     memset(&time, 0, sizeof(time));
-    if(clock_gettime(CLOCK_REALTIME_COARSE, &time) < 0) {
-        printf("[%d] error getting time\n", __LINE__);
+    if(clock_gettime(CLOCK_REALTIME, &time) < 0) {
+        printf("[%d] error getting time\n", getpid());
         exit(0);
     }
-    printf("Dump TIME ");
-    dump(&time, sizeof(time));
+    //printf("TX Dump TIME ");
+    //dump(&time, sizeof(time));
     if(send(sockfd, &time, sizeof(time), 0) < 0) {
-        printf("[%d] socket send failed!\n", __LINE__);
+        printf("[%d] socket send failed!\n", getpid());
         exit(0);
     }
 }
@@ -41,7 +41,7 @@ int main(int argc, char *argv[])
 
     if(argc != 3)
     {
-        printf("\n Usage: %s <ip of server> \n",argv[0]);
+        printf("\n Usage: %s <ip of server> \n", argv[0]);
         return 1;
     }
 
@@ -74,20 +74,20 @@ int main(int argc, char *argv[])
             printf("receive failed!\n");
             exit(0);
         }
-        printf("Dump RTT ");
-        dump(&rtt, sizeof(rtt));
+        //printf("RX Dump RTT ");
+        //dump(&rtt, sizeof(rtt));
 
         memset(&time, 0, sizeof(time));
-        if(clock_gettime(CLOCK_REALTIME_COARSE, &time) < 0) {
+        if(clock_gettime(CLOCK_REALTIME, &time) < 0) {
             printf("[%d] error getting time\n", __LINE__);
             exit(0);
         }
-        printf("RTT %.5f s\n",
-           ((double)time.tv_sec + 1.0e-9*time.tv_nsec) - 
-           ((double)rtt.tv_sec + 1.0e-9*rtt.tv_nsec));
+        //printf("Dump TIME ");
+        //dump(&time, sizeof(time));
 
-        printf("Dump TIME ");
-        dump(&time, sizeof(time));
+        printf("[%d] Client RX : RTT %.5f us\n", getpid(),
+           (1.0e+6*time.tv_sec + 1.0e-3*time.tv_nsec) - 
+           (1.0e+6*rtt.tv_sec + 1.0e-3*rtt.tv_nsec));
 
         sleep(5);
         send_clock(sockfd);

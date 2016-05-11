@@ -57,20 +57,20 @@ int main(int argc, char *argv[])
                     printf("[%d,%d] receive failed!\n", getppid(), getpid());
                     break;
                 }
-                printf("[%d,%d] Dump RTT ", getppid(), getpid());
-                dump(&rtt, sizeof(rtt));
+                //printf("[%d,%d] Dump RTT ", getppid(), getpid());
+                //dump(&rtt, sizeof(rtt));
 
                 memset(&time, 0, sizeof(time));
-                if(clock_gettime(CLOCK_REALTIME_COARSE, &time) < 0) {
+                if(clock_gettime(CLOCK_REALTIME, &time) < 0) {
                     printf("[%d,%d] error getting time\n", getppid(), getpid());
                     break;
                 }
-                printf("[%d,%d] RTT %.5f s\n",
-                    ((double)time.tv_sec + 1.0e-9*time.tv_nsec) - 
-                    ((double)rtt.tv_sec + 1.0e-9*rtt.tv_nsec), getppid(), getpid());
+                printf("[%d,%d] Accept RX : %.5f us\n",
+                    (1.0e+6*time.tv_sec + 1.0e-3*time.tv_nsec) - 
+                    (1.0e+6*rtt.tv_sec + 1.0e-3*rtt.tv_nsec), getppid(), getpid());
 
-                printf("Dump TIME ");
-                dump(&time, sizeof(time));
+                //printf("Dump TIME ");
+                //dump(&time, sizeof(time));
                 if(send(connfd, &rtt, sizeof(rtt), 0) < 0) {
                     printf("[%d,%d] socket send failed!\n", getppid(), getpid());
                     break;
