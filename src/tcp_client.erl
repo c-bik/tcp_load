@@ -7,7 +7,7 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 
--export([start_link/2, start_link/3]).
+-export([start_link/3]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -20,20 +20,19 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 
-start_link(Ip, Port) ->
-    gen_server:start_link(?MODULE, [Ip, Port], []).
-start_link(Ip, Port, Sock) ->
-    gen_server:start_link(?MODULE, [Ip, Port, Sock], []).
+start_link(P1, P2, P3) ->
+    gen_server:start_link(?MODULE, [P1, P2, P3], []).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 
-init([Ip, Port]) ->
+init([Id, Ip, Port]) when is_integer(Id) ->
     process_flag(trap_exit, true),
     case gen_tcp:connect(Ip, Port, [{packet, 0}, binary, {active, once}]) of
         {ok, Sock} ->
-            ?L("connect ~p ~p ~p", [Ip, Port, Sock]),
+            {ok, {_, LPort}} = inet:sockname(Sock),
+            ?L("[~p] connect ~s:~p <- ~p", [Id, inet:ntoa(Ip), Port, LPort]),
             erlang:send_after(5000, self(), msg),
             {ok, {Ip, Port, Sock}};
         {error, Reason} -> {stop, Reason}
@@ -67,29 +66,34 @@ handle_info({tcp_closed, Sock}, State) ->
 handle_info({tcp, Sock, Data}, {Ip, Port, Sock}) ->
     try
         RTT = timer:now_diff(os:timestamp(), binary_to_term(Data)),
-        if RTT > 500000 -> ?L("~p Client RX : RTT ~p us", [self(), RTT]); true -> ok end
+        if RTT > 100000 -> ?L("~p Client RX : RTT ~p us", [self(), RTT]); true -> ok end
     catch
         _:_ ->
             ?L("ERROR erlang term ~p Client RX : ~p", [self(), byte_size(Data)])
     end,
-    self() ! arm,
-    {noreply, {Ip, Port, Sock}};
+    case inet:setopts(Sock, [{active, once}]) of
+        ok -> {noreply, {Ip, Port, Sock}};
+        Error -> {stop, Error, {Ip, Port, Sock}}
+    end;
 handle_info({tcp, Sock, Data}, Sock) ->
     try
         RXT = timer:now_diff(os:timestamp(), binary_to_term(Data)),
-        if RXT > 1000 -> ?L("~p Accept RX : ~p us", [self(), RXT]); true -> ok end
+        if RXT > 100000 -> ?L("~p Accept RX : ~p us", [self(), RXT]); true -> ok end
     catch
         _:_ ->
             ?L("~p Accept RX : ~p", [self(), byte_size(Data)])
     end,
     case gen_tcp:send(Sock, Data) of
         ok ->
-            self() ! arm,
-            {noreply, Sock};
+            case inet:setopts(Sock, [{active, once}]) of
+                ok -> {noreply, Sock};
+                Error -> {stop, Error, Sock}
+            end;
         {error, Reason} ->
             {stop, Reason, Sock}
     end;
 handle_info(arm, {Ip, Port, Sock}) ->
+    ?L("-------- WILL NEVER -- PRINT --"),
     case inet:setopts(Sock, [{active, once}]) of
         ok -> {noreply, {Ip, Port, Sock}};
         Error -> {stop, Error, {Ip, Port, Sock}}
