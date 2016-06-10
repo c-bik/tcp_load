@@ -92,12 +92,6 @@ handle_info({tcp, Sock, Data}, Sock) ->
         {error, Reason} ->
             {stop, Reason, Sock}
     end;
-handle_info(arm, {Ip, Port, Sock}) ->
-    ?L("-------- WILL NEVER -- PRINT --"),
-    case inet:setopts(Sock, [{active, once}]) of
-        ok -> {noreply, {Ip, Port, Sock}};
-        Error -> {stop, Error, {Ip, Port, Sock}}
-    end;
 handle_info(arm, Sock) ->
     case inet:setopts(Sock, [{active, once}]) of
         ok -> {noreply, Sock};
