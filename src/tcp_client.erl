@@ -29,10 +29,19 @@ start_link(P1, P2, P3) ->
 
 init([Id, Ip, Port]) when is_integer(Id) ->
     process_flag(trap_exit, true),
+    T1 = os:timestamp(),
     case gen_tcp:connect(Ip, Port, [{packet, 0}, binary, {active, once}]) of
         {ok, Sock} ->
             {ok, {_, LPort}} = inet:sockname(Sock),
-            ?L("[~p] connect ~s:~p <- ~p", [Id, inet:ntoa(Ip), Port, LPort]),
+            T2 = os:timestamp(),
+            ConDelay = timer:now_diff(T2, T1),
+            if ConDelay > 100000 ->
+                ?L("[~p] connect ~s:~p <- ~p in ~p us",
+                   [Id, inet:ntoa(Ip), Port, LPort, ConDelay]);
+               true ->
+                ?L("[~p] connect ~s:~p <- ~p",
+                   [Id, inet:ntoa(Ip), Port, LPort])
+            end,
             erlang:send_after(5000, self(), msg),
             {ok, {Ip, Port, Sock}};
         {error, Reason} -> {stop, Reason}
