@@ -1,6 +1,8 @@
 -module(tcp_server).
 -behaviour(gen_server).
 
+-include("tcp_load.hrl").
+
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
@@ -29,7 +31,7 @@ init([Ip, Port]) ->
     process_flag(trap_exit, true),
     case gen_tcp:listen(Port, [{ip, Ip}, binary, {active, false}]) of
         {ok, LSock} ->
-            io:format("Listen ~p ~p ~p~n", [Ip, Port,LSock]),
+            ?L("Listen ~p ~p ~p", [Ip, Port,LSock]),
             self() ! accept,
             {ok, {Ip, Port, LSock}};
         {error, Reason} -> {stop, Reason}
@@ -59,7 +61,7 @@ handle_info(accept, {Ip, Port, LSock}) ->
 
 terminate(Reason, {Ip, Port, Sock}) ->
     catch gen_tcp:close(Sock),
-    io:format("die ~p ~p~n", [Reason, {Ip, Port, Sock}]).
+    ?L("die ~p ~p", [Reason, {Ip, Port, Sock}]).
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -67,4 +69,3 @@ code_change(_OldVsn, State, _Extra) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
