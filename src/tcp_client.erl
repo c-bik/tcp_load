@@ -52,7 +52,8 @@ init([Id, SrcIp, Ip, Port]) when is_integer(Id) ->
         {error, Reason} -> {stop, Reason}
     end;
 init([Ip, Port, Sock]) ->
-    ?L("accept ~p ~p ~p", [Ip, Port, Sock]),
+    {ok, {PeerIp, _}} = inet:peername(Sock),
+    ?L("accept ] ~p (~p) ~p ~p", [PeerIp, Ip, Port, Sock]),
     process_flag(trap_exit, true),
     {ok, Sock}.
 
