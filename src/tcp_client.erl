@@ -7,7 +7,7 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 
--export([start_link/3]).
+-export([connect/4, accept/3]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -20,19 +20,25 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 
-start_link(P1, P2, P3) ->
-    gen_server:start_link(?MODULE, [P1, P2, P3], []).
+connect(Id, SrcIp, Ip, Port) ->
+    gen_server:start_link(?MODULE, [Id, SrcIp, Ip, Port], []).
+
+accept(Ip, Port, Sock) ->
+    gen_server:start_link(?MODULE, [Ip, Port, Sock], []).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 
-init([Id, Ip, Port]) when is_integer(Id) ->
+init([Id, SrcIp, Ip, Port]) when is_integer(Id) ->
     process_flag(trap_exit, true),
-    case gen_tcp:connect(Ip, Port, [{packet, 0}, binary, {active, once}]) of
+    case gen_tcp:connect(
+            Ip, Port,
+            [{packet, 0}, binary, {active, once}, {ip, SrcIp}]) of
         {ok, Sock} ->
             {ok, {_, LPort}} = inet:sockname(Sock),
-            ?L("[~p] connect ~s:~p <- ~p", [Id, inet:ntoa(Ip), Port, LPort]),
+            ?L("[~p] connect ~s:~p <- ~p",
+               [Id, inet:ntoa(Ip), Port, LPort]),
             erlang:send_after(5000, self(), msg),
             {ok, {Ip, Port, Sock}};
         {error, Reason} -> {stop, Reason}

@@ -8,7 +8,7 @@
 %% Supervisor callbacks
 -export([init/1]).
 
--export([server/2, client/3, clients/3]).
+-export([server/2, client/3, clients/4]).
 
 %% ===================================================================
 %% Application callbacks
@@ -32,17 +32,17 @@ init([]) ->
 server(Ip, Port) ->
     supervisor:start_child(?MODULE, {{server, make_ref(), Ip, Port}, {tcp_server, start_link, [Ip, Port]}, permanent, 5000, worker, [tcp_server]}).
 
-clients(0, _Ip, _Port) -> ok;
-clients(Count, Ip, Port) when Count > 0 ->
-    client(Count, Ip, Port),
-    clients(Count - 1, Ip, Port).
+clients(0, _SrcIp, _Ip, _Port) -> ok;
+clients(Count, SrcIp, Ip, Port) when Count > 0 ->
+    client(Count, SrcIp, Ip, Port),
+    clients(Count - 1, SrcIp, Ip, Port).
 
-client(Id, Ip, Port) when is_integer(Id) ->
+client(Id, SrcIp, Ip, Port) when is_integer(Id) ->
     supervisor:start_child(?MODULE, {{client, make_ref(), Ip, Port},
-                           {tcp_client, start_link, [Id, Ip, Port]},
-                           permanent, 5000, worker, [tcp_client]});
+                           {tcp_client, connect, [Id, SrcIp, Ip, Port]},
+                           permanent, 5000, worker, [tcp_client]}).
+
 client(Ip, Port, Sock) ->
     supervisor:start_child(?MODULE, {{accept, make_ref(), Ip, Port},
-                           {tcp_client, start_link, [Ip, Port, Sock]},
+                           {tcp_client, accept, [Ip, Port, Sock]},
                            temporary, 5000, worker, [tcp_client]}).
-
