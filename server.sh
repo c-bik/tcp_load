@@ -8,4 +8,4 @@ else
     #exename='erl.exe'
 fi
              
-$exename +K true -sname server -pa ebin/ -s tcp_load
+$exename +K true -pa ebin/ -pa deps/*/ebin -s tcp_load

@@ -14,11 +14,15 @@
 %% Application callbacks
 %% ===================================================================
 
-start() -> application:start(?MODULE).
-start(_StartType, _StartArgs) ->
-        supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+start() ->
+    application:start(ranch),
+    application:start(?MODULE).
+start(_StartType, _StartArgs) ->    
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-stop() -> application:stop(?MODULE).
+stop() ->
+    application:stop(?MODULE),
+    application:stop(ranch).
 stop(_State) -> ok.
 
 
@@ -30,7 +34,10 @@ init([]) ->
     {ok, { {one_for_one, 5, 10}, []} }.
 
 server(Ip, Port) ->
-    supervisor:start_child(?MODULE, {{server, make_ref(), Ip, Port}, {tcp_server, start_link, [Ip, Port]}, permanent, 5000, worker, [tcp_server]}).
+    ranch:start_listener(tcp_echo, 100,
+                         ranch_tcp, [{ip, Ip}, {port, Port}, {max_connections, infinity}],
+                         tcp_client, []).
+   %% supervisor:start_child(?MODULE, {{server, make_ref(), Ip, Port}, {tcp_server, start_link, [Ip, Port]}, permanent, 5000, worker, [tcp_server]}).
 
 clients(0, _SrcIp, _Ip, _Port) -> ok;
 clients(Count, SrcIp, Ip, Port) when Count > 0 ->

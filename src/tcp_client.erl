@@ -1,30 +1,46 @@
 -module(tcp_client).
 -behaviour(gen_server).
+-behaviour(ranch_protocol).
 
 -include("tcp_load.hrl").
 
 %% ------------------------------------------------------------------
+%% ranch_protocol Function Exports
+%% ------------------------------------------------------------------
+-export([start_link/4, init/4]).
+
+%% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
-
--export([connect/4, accept/3]).
+-export([connect/4]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
 %% ------------------------------------------------------------------
-
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
 %% ------------------------------------------------------------------
+%% ranch_protocol API Function Definitions
+%% ------------------------------------------------------------------
+start_link(Ref, Socket, Transport, Opts) ->
+	proc_lib:start_link(?MODULE, init, [Ref, Socket, Transport, Opts]).
+
+init(Ref, Socket, Transport, _Opts = []) ->
+	ok = proc_lib:init_ack({ok, self()}),
+	%% Perform any required state initialization here.
+	ok = ranch:accept_ack(Ref),
+	ok = Transport:setopts(Socket, [{active, once}]),
+    {ok, {PeerIp, Port}} = Transport:peername(Socket),
+    ?L("accept ~p:~p", [PeerIp,Port]),
+    process_flag(trap_exit, true),
+	gen_server:enter_loop(?MODULE, [], {state, Socket, Transport}).
+
+%% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
-
 connect(Id, SrcIp, Ip, Port) ->
     gen_server:start_link(?MODULE, [Id, SrcIp, Ip, Port], []).
-
-accept(Ip, Port, Sock) ->
-    gen_server:start_link(?MODULE, [Ip, Port, Sock], []).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -50,12 +66,7 @@ init([Id, SrcIp, Ip, Port]) when is_integer(Id) ->
             erlang:send_after(5000, self(), msg),
             {ok, {Ip, Port, Sock}};
         {error, Reason} -> {stop, Reason}
-    end;
-init([Ip, Port, Sock]) ->
-    {ok, {PeerIp, _}} = inet:peername(Sock),
-    ?L("accept ] ~p (~p) ~p ~p", [PeerIp, Ip, Port, Sock]),
-    process_flag(trap_exit, true),
-    {ok, Sock}.
+    end.
 
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
@@ -90,7 +101,7 @@ handle_info({tcp, Sock, Data}, {Ip, Port, Sock}) ->
         ok -> {noreply, {Ip, Port, Sock}};
         Error -> {stop, Error, {Ip, Port, Sock}}
     end;
-handle_info({tcp, Sock, Data}, Sock) ->
+handle_info({tcp, Sock, Data}, {state, Sock, Transport} = State) ->
     try
         RXT = timer:now_diff(os:timestamp(), binary_to_term(Data)),
         if RXT > 100000 -> ?L("~p Accept RX : ~p us", [self(), RXT]); true -> ok end
@@ -100,17 +111,12 @@ handle_info({tcp, Sock, Data}, Sock) ->
     end,
     case gen_tcp:send(Sock, Data) of
         ok ->
-            case inet:setopts(Sock, [{active, once}]) of
-                ok -> {noreply, Sock};
-                Error -> {stop, Error, Sock}
+            case Transport:setopts(Sock, [{active, once}]) of
+                ok -> {noreply, State};
+                Error -> {stop, Error, State}
             end;
         {error, Reason} ->
-            {stop, Reason, Sock}
-    end;
-handle_info(arm, Sock) ->
-    case inet:setopts(Sock, [{active, once}]) of
-        ok -> {noreply, Sock};
-        Error -> {stop, Error, Sock}
+            {stop, Reason, State}
     end.
 
 terminate(Reason, State) ->
