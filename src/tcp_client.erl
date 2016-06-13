@@ -48,6 +48,15 @@ connect(Id, SrcIp, Ip, Port) ->
 
 init([Id, SrcIp, Ip, Port]) when is_integer(Id) ->
     process_flag(trap_exit, true),
+    {ok, {{Id, SrcIp, Ip, Port}}, 0}.
+
+handle_call(_Request, _From, State) ->
+    {reply, ok, State}.
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info(timeout, {{Id, SrcIp,Ip, Port}}) ->
     T1 = os:timestamp(),
     case gen_tcp:connect(
             Ip, Port,
@@ -64,16 +73,10 @@ init([Id, SrcIp, Ip, Port]) when is_integer(Id) ->
                    [Id, inet:ntoa(Ip), Port, LPort])
             end,
             erlang:send_after(5000, self(), msg),
-            {ok, {Ip, Port, Sock}};
-        {error, Reason} -> {stop, Reason}
-    end.
-
-handle_call(_Request, _From, State) ->
-    {reply, ok, State}.
-
-handle_cast(_Msg, State) ->
-    {noreply, State}.
-
+            {noreply, {Ip, Port, Sock}};
+        {error, Reason} ->
+            {stop, Reason, {{Id, SrcIp,Ip, Port}}}
+    end;
 handle_info(msg, {Ip, Port, Sock}) ->
     Data = term_to_binary(os:timestamp()),
     case gen_tcp:send(Sock, Data) of
