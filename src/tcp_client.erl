@@ -95,7 +95,7 @@ handle_info({tcp_closed, Sock}, State) ->
 handle_info({tcp, Sock, Data}, {Ip, Port, Sock}) ->
     try
         RTT = timer:now_diff(os:timestamp(), binary_to_term(Data)),
-        if RTT > 100000 -> ?L("~p Client RX : RTT ~p us", [self(), RTT]); true -> ok end
+        if RTT > 1000000 -> ?L("~p Client RTT ~p us", [self(), RTT]); true -> ok end
     catch
         _:_ ->
             ?L("ERROR erlang term ~p Client RX : ~p", [self(), byte_size(Data)])
@@ -107,7 +107,7 @@ handle_info({tcp, Sock, Data}, {Ip, Port, Sock}) ->
 handle_info({tcp, Sock, Data}, {state, Sock, Transport} = State) ->
     try
         RXT = timer:now_diff(os:timestamp(), binary_to_term(Data)),
-        if RXT > 100000 -> ?L("~p Accept RX : ~p us", [self(), RXT]); true -> ok end
+        if RXT > 500000 -> ?L("~p Server RX ~p us", [self(), RXT]); true -> ok end
     catch
         _:_ ->
             ?L("~p Accept RX : ~p", [self(), byte_size(Data)])
