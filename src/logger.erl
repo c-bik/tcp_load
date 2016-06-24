@@ -38,10 +38,10 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info(_Info, #state{type = server, cons_sup = ConnsSupPid} = State) ->
-    ?L("SCons ~p", [stats(ConnsSupPid)]),
+    ?L("server ~p", [stats(ConnsSupPid)]),
     {noreply, State, ?PERIOD};
 handle_info(_Info, #state{type = client} = State) ->
-    ?L("Cons ~p", [stats(tcp_load)]),
+    ?L("client ~p", [stats(tcp_load)]),
     {noreply, State, ?PERIOD}.
 
 terminate(Reason, _State) ->
@@ -51,13 +51,13 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 stats(SupRef) ->
-    Children = supervisor:which_children(SupRef),
+    Children = [P || {_,P,worker,[tcp_client]} <- supervisor:which_children(SupRef)],
     StatsSum =
     lists:foldl(
-      fun({_,P,worker,[tcp_client]}, Acc) ->
-              {links, [_,Socket]} = process_info(P, links),
+      fun(Pid, Acc) ->
+              {links, [_,Socket]} = process_info(Pid, links),
               {ok, OptValues} = inet:getstat(Socket),
-              {Msgs, AvgDly} = gen_server:call(P, stat),
+              {Msgs, AvgDly} = gen_server:call(Pid, stat),
               PStat = (maps:from_list(OptValues))#{msgs => Msgs, avg_rxt => AvgDly},
               if map_size(Acc) > 0 ->
                      maps:map(
@@ -66,10 +66,9 @@ stats(SupRef) ->
                        end, Acc);
                  true ->
                      PStat
-              end;
-         (_, Acc) -> Acc
+              end
       end, #{}, Children),
     Childs = length(Children),
-    maps:map(fun(msgs, V) -> V;
-                (_, V) -> V / Childs
-             end, StatsSum).
+    (maps:map(fun(msgs, V) -> V;
+                 (_, V) -> V / Childs
+              end, StatsSum))#{connections => Childs}.
