@@ -8,4 +8,4 @@ else
     #exename='erl.exe'
 fi
              
-$exename +K true -pa ebin/ -pa deps/*/ebin -s tcp_load
+$exename +K true -pa ebin/ -pa deps/*/ebin/ -s tcp_load -type server -ip $1 -port $2

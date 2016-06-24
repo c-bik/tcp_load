@@ -26,37 +26,44 @@
 start_link(Ref, Socket, Transport, Opts) ->
 	proc_lib:start_link(?MODULE, init, [Ref, Socket, Transport, Opts]).
 
+-record(sst, {transport, msg_cnt = 0, avg_dly = 0, sock}).
 init(Ref, Socket, Transport, _Opts = []) ->
 	ok = proc_lib:init_ack({ok, self()}),
 	%% Perform any required state initialization here.
 	ok = ranch:accept_ack(Ref),
 	ok = Transport:setopts(Socket, [{active, once}]),
     {ok, {PeerIp, Port}} = Transport:peername(Socket),
-    ?L("accept ~p:~p", [PeerIp,Port]),
+    ?L("accept ~s:~p", [inet:ntoa(PeerIp),Port]),
     process_flag(trap_exit, true),
-	gen_server:enter_loop(?MODULE, [], {state, Socket, Transport}).
+	gen_server:enter_loop(?MODULE, [], #sst{sock = Socket, transport = Transport}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
+-record(cst, {id, sip, ip, port, msg_cnt = 0, avg_dly = 0, sock}).
 connect(Id, SrcIp, Ip, Port) ->
-    gen_server:start_link(?MODULE, [Id, SrcIp, Ip, Port], []).
+    gen_server:start_link(
+      ?MODULE, [#cst{id = Id, sip = SrcIp, ip = Ip, port = Port}], []).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 
-init([Id, SrcIp, Ip, Port]) when is_integer(Id) ->
+init([#cst{id = Id} = Cst]) when is_integer(Id) ->
     process_flag(trap_exit, true),
-    {ok, {{Id, SrcIp, Ip, Port}}, 0}.
+    {ok, Cst, 0}.
 
-handle_call(_Request, _From, State) ->
+handle_call(stat, _From, #sst{msg_cnt = MsgCnt, avg_dly = AvgDly} = Sst) ->
+    {reply, {MsgCnt,AvgDly}, Sst};
+handle_call(stat, _From, #cst{msg_cnt = MsgCnt, avg_dly = AvgDly} = Cst) ->
+    {reply, {MsgCnt,AvgDly}, Cst};
+handle_call(_Req, _From, State) ->
     {reply, ok, State}.
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info(timeout, {{Id, SrcIp,Ip, Port}}) ->
+handle_info(timeout, #cst{id = Id, sip = SrcIp, ip = Ip, port = Port} = Cst) ->
     T1 = os:timestamp(),
     case gen_tcp:connect(
             Ip, Port,
@@ -73,18 +80,18 @@ handle_info(timeout, {{Id, SrcIp,Ip, Port}}) ->
                    [Id, inet:ntoa(Ip), Port, LPort])
             end,
             erlang:send_after(5000, self(), msg),
-            {noreply, {Ip, Port, Sock}};
+            {noreply, Cst#cst{sock=Sock}};
         {error, Reason} ->
-            {stop, Reason, {{Id, SrcIp,Ip, Port}}}
+            {stop, Reason, Cst}
     end;
-handle_info(msg, {Ip, Port, Sock}) ->
+handle_info(msg, #cst{sock = Sock} = Cst) ->
     Data = term_to_binary(os:timestamp()),
     case gen_tcp:send(Sock, Data) of
         ok ->
             erlang:send_after(5000, self(), msg),
-            {noreply, {Ip, Port, Sock}};
+            {noreply, Cst};
         {error, Reason} ->
-            {stop, Reason, {Ip, Port, Sock}}
+            {stop, Reason, Cst}
     end;
 handle_info({tcp_error, Sock, Reason}, State) ->
     catch gen_tcp:close(Sock),
@@ -92,34 +99,43 @@ handle_info({tcp_error, Sock, Reason}, State) ->
 handle_info({tcp_closed, Sock}, State) ->
     catch gen_tcp:close(Sock),
     {stop, normal, State};
-handle_info({tcp, Sock, Data}, {Ip, Port, Sock}) ->
+handle_info({tcp, Sock, Data},
+            #cst{sock = Sock, msg_cnt = OldMsgCnt, avg_dly = OldAvgDly} = Cst) ->
+    {NewMsgCnt, NewAvgDly} =
     try
         RTT = timer:now_diff(os:timestamp(), binary_to_term(Data)),
-        if RTT > 1000000 -> ?L("~p Client RTT ~p us", [self(), RTT]); true -> ok end
+        {OldMsgCnt + 1,
+         (RTT + OldMsgCnt * OldAvgDly) / (OldMsgCnt + 1)}
     catch
         _:_ ->
-            ?L("ERROR erlang term ~p Client RX : ~p", [self(), byte_size(Data)])
+            ?L("ERROR erlang term ~p Client RX : ~p", [self(), byte_size(Data)]),
+            {OldMsgCnt+1, OldAvgDly}
     end,
     case inet:setopts(Sock, [{active, once}]) of
-        ok -> {noreply, {Ip, Port, Sock}};
-        Error -> {stop, Error, {Ip, Port, Sock}}
+        ok -> {noreply, Cst#cst{msg_cnt = NewMsgCnt, avg_dly = NewAvgDly}};
+        Error -> {stop, Error, Cst}
     end;
-handle_info({tcp, Sock, Data}, {state, Sock, Transport} = State) ->
+handle_info({tcp, Sock, Data},
+            #sst{sock = Sock, transport = Transport,
+                 msg_cnt = OldMsgCnt, avg_dly = OldAvgDly} = Sst) ->
+    {NewMsgCnt, NewAvgDly} =
     try
         RXT = timer:now_diff(os:timestamp(), binary_to_term(Data)),
-        if RXT > 500000 -> ?L("~p Server RX ~p us", [self(), RXT]); true -> ok end
+        {OldMsgCnt + 1,
+         (RXT + OldMsgCnt * OldAvgDly) / (OldMsgCnt + 1)}
     catch
         _:_ ->
-            ?L("~p Accept RX : ~p", [self(), byte_size(Data)])
+            ?L("Error ~p Accept RX : ~p", [self(), byte_size(Data)]),
+            {OldMsgCnt+1, OldAvgDly}
     end,
     case gen_tcp:send(Sock, Data) of
         ok ->
             case Transport:setopts(Sock, [{active, once}]) of
-                ok -> {noreply, State};
-                Error -> {stop, Error, State}
+                ok -> {noreply, Sst#sst{msg_cnt = NewMsgCnt, avg_dly = NewAvgDly}};
+                Error -> {stop, Error, Sst}
             end;
         {error, Reason} ->
-            {stop, Reason, State}
+            {stop, Reason, Sst}
     end.
 
 terminate(Reason, State) ->
